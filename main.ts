@@ -41,10 +41,10 @@ export default class MyPlugin extends Plugin {
 
 		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
-			id: 'open-test',
-			name: 'open-test',
+			id: 'onOpen1',
+			name: 'onOpen1',
 			callback: () => {
-				new SampleModal(this.app).open();
+				new SampleModal(this.app).onOpen1();
 			}
 		});
 		// This adds an editor command that can perform some operation on the current editor instance
@@ -59,7 +59,7 @@ export default class MyPlugin extends Plugin {
 		// This adds a complex command that can check whether the current state of the app allows execution of the command
 		this.addCommand({
 			id: 'open-sample-modal-complex',
-			name: 'Open sample modal (complex)',
+			name: 'openを呼び出します',
 			checkCallback: (checking: boolean) => {
 				// Conditions to check
 				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -142,6 +142,24 @@ class SampleModal extends Modal {
 		contentEl.empty();
 	}
 
+	async onOpen1(){
+		//この関数を呼び出して、アクティブなペインに開かれているファイルのパスを取得
+		const filePath = await this.getActiveFilePath();
+		console.log("ファイルパスは、" + filePath);
+		const file = this.getFileByPath(filePath);
+		if (file) {
+			console.log("ファイル名:", file.name);
+			if (file instanceof TFile) {
+				this.createFileCopy(file).then(() => console.log("コピー完了")).catch(console.error);
+			} else {
+				console.log("指定されたパスにファイルが見つかりません。");
+			}
+		} else {
+			console.log("ファイルが見つかりませんでした。");
+		}
+
+	}
+
 	async loadFilesAndAliases() {
 		console.log('loadFilesAndAliasesが呼び出されました');
 		const targetFolderPath: string = 'requirements';
@@ -202,7 +220,79 @@ class SampleModal extends Modal {
 	
 		return [];
 	}
+
+	
+	// アクティブなペインに開かれているファイルのファイルパスを取得する関数
+	getActiveFilePath() {
+		// アクティブなリーフ（ペイン）を取得
+		const activeLeaf = app.workspace.activeLeaf;
+		if (!activeLeaf) {
+			console.log("アクティブなペインがありません。");
+			return null;
+		}
+
+		// リーフから現在のビューを取得
+		const view = activeLeaf.view;
+
+		// ビューがマークダウンファイルのビューであるか確認し、ファイルパスを取得
+		if (view.getViewType() === "markdown") {
+			// ビューからファイル情報を取得する前に、fileプロパティが存在するか確認
+			if (view.file) {
+				// ファイルパスを取得して返す
+				return view.file.path;
+			} else {
+				console.log("このビューにはファイル情報が含まれていません。");
+				return null;
+			}
+		} else {
+			console.log("アクティブなペインにマークダウンファイルが開かれていません。");
+			return null;
+		}
+
+	}
+
+	// ファイルパスからTFileオブジェクトを取得する関数
+    getFileByPath(filePath :string) {
+    // Vaultからファイル（またはフォルダ）を取得
+    const file = app.vault.getAbstractFileByPath(filePath);
+
+    // 取得したオブジェクトがTFileインスタンスであるか確認
+    if (file instanceof TFile) {
+        // TFileオブジェクトであればそれを返す
+        return file;
+    } else {
+        // TFileオブジェクトでなければ、nullを返すか、エラーメッセージを表示
+        console.error("指定されたパスにファイルが存在しません。");
+        return null;
+    }
 }
+
+
+	// TFileオブジェクトを引数に取り、そのファイルのコピーを作成する関数
+	async createFileCopy(originalFile :TFile) {
+		try {
+			// 元のファイルの内容を読み込む
+			const fileContent = await app.vault.read(originalFile);
+
+			// 新しいファイル名を決定（例: original.md -> original_copy.md）
+			const originalFileName = originalFile.name;
+			const fileNameParts = originalFileName.split('.');
+			const fileExtension = fileNameParts.pop();
+			const newFileName = `${fileNameParts.join('.')}_copy.${fileExtension}`;
+
+			// 元のファイルと同じディレクトリに新しいファイル名でファイルを作成
+			const newFilePath = originalFile.path.replace(originalFileName, newFileName);
+			
+			await app.vault.create(newFilePath, fileContent);
+			console.log(`ファイルがコピーされました: ${newFilePath}`);
+		} catch (error) {
+			console.error(`ファイルのコピーに失敗しました: ${error}`);
+		}
+	}
+
+}
+
+	
 
 
 class SampleSettingTab extends PluginSettingTab {
