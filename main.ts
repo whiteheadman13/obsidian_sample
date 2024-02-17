@@ -1,13 +1,24 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
 
 // Remember to rename these classes and interfaces!
 
 interface MyPluginSettings {
 	mySetting: string;
+	hogehoge1: string;
+	hogehoge2: number;
+	hogehoge3: boolean;
+}
+
+interface FileAlias {
+    filename: string;
+    aliases: string[];
 }
 
 const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default'
+	mySetting: 'default',
+	hogehoge1: 'string setting',
+	hogehoge2: 10,
+	hogehoge3: false
 }
 
 export default class MyPlugin extends Plugin {
@@ -30,8 +41,8 @@ export default class MyPlugin extends Plugin {
 
 		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
-			id: 'open-sample-modal-simple',
-			name: 'Open sample modal (simple)',
+			id: 'open-test',
+			name: 'open-test',
 			callback: () => {
 				new SampleModal(this.app).open();
 			}
@@ -56,6 +67,7 @@ export default class MyPlugin extends Plugin {
 					// If checking is true, we're simply "checking" if the command can be run.
 					// If checking is false, then we want to actually perform the operation.
 					if (!checking) {
+						console.log('処理開始');
 						new SampleModal(this.app).open();
 					}
 
@@ -96,16 +108,102 @@ class SampleModal extends Modal {
 		super(app);
 	}
 
-	onOpen() {
+	
+	async onOpen() {
 		const {contentEl} = this;
-		contentEl.setText('Woah!');
+
+		contentEl.setText('Woah!こんにちは！onOpenを呼び出しました');
+
+		
+		//特定のフォルダ配下のファイル一覧を取得
+
+		//各ファイルのファイル名とaliasを取得する。辞書型として格納する
+		//例えば'ABCD'ファイルにaliasで'a','AA'とある場合、下記２種類の配列を作成する。
+		//key:'ABCD', value:'a'
+		//key:'ABCD', value:'AA'
+		
+		
+		//例えば'ABCD'ファイルにaliasで'a','AA'、'BCD'ファイルにalias'b','BB'とあった場合、
+		//ファイル名の長い順番'ABCD'>'BCD'の順で並び替えを行う。
+
+		//文章内を検索し、一致したらリンクに置き換える。（'ABCD'＞'[[ABCD]]'）
+		//もし、aliasと同じ場合は、[[ABCD|a]]といった形に置き換える。
+
+		await this.loadFilesAndAliases();
+
+			
+		
+
+
 	}
 
 	onClose() {
 		const {contentEl} = this;
 		contentEl.empty();
 	}
+
+	async loadFilesAndAliases() {
+		console.log('loadFilesAndAliasesが呼び出されました');
+		const targetFolderPath: string = 'requirements';
+		let fileReadPromises: Promise<FileAlias>[] = [];
+	
+		// 特定のフォルダ配下のファイル一覧を取得
+		this.app.vault.getFiles().forEach((file: TFile) => {
+			if (file.path.startsWith(targetFolderPath)) {
+				// 各ファイルの内容を読み込むPromiseを配列に追加
+				const promise = this.app.vault.read(file).then((content: string): FileAlias => {
+					const aliases = this.extractAliases(content);
+					return { filename: file.basename, aliases };
+				});
+				fileReadPromises.push(promise);
+			}
+		});
+	
+		// 全てのファイルの読み込みを待つ
+		Promise.all(fileReadPromises).then((filesAndAliases) => {
+			console.log('ファイル名が長い順にソートしてコンソールに出力');
+			//ファイル名をマップする
+
+			// ファイル名が長い順にソートしてコンソールに出力
+			filesAndAliases
+				.flatMap(item => {
+					// ファイル名自体もエイリアスリストに追加
+					const aliasesWithFilename = [...item.aliases, item.filename];
+					return aliasesWithFilename.map(alias => ({ filename: item.filename, alias }));
+    			})
+				.sort((a, b) => b.filename.length - a.filename.length)
+				.forEach(({ filename, alias }) => {
+					console.log(`Key: ${filename}, Value: ${alias}`);
+				});
+		}).catch((err) => {
+			console.error('Error processing files:', err);
+		});
+	}
+
+	extractAliases(fileContent: string): string[] {
+		
+		console.log("extractAliasesが呼び出されました");
+		// YAMLブロック内のエイリアスを検出するための正規表現パターンをさらに更新
+		const yamlPattern = /^aliases:(.*?$(?:\n  - .*)*|.*?(\[.*?\])?.*?)/ms;
+		const match = fileContent.match(yamlPattern);
+	
+		if (match) {
+			// インデントされたリスト形式
+			if (match[1] && match[1].includes('\n  - ')) {
+				const listStyleAliases = match[1].split('\n').filter(line => line.startsWith('  - ')).map(line => line.replace('  - ', '').trim().replace(/^["']|["']$/g, ''));
+				return listStyleAliases;
+			} else {
+				// カンマ区切り形式 (括弧がある場合もない場合も対応)
+				const inlineAliases = match[1].trim();
+				const aliases = inlineAliases.startsWith('[') ? inlineAliases.slice(1, -1) : inlineAliases; // 括弧を除去
+				return aliases.split(',').map(alias => alias.trim().replace(/^["']|["']$/g, ''));
+			}
+		}
+	
+		return [];
+	}
 }
+
 
 class SampleSettingTab extends PluginSettingTab {
 	plugin: MyPlugin;
@@ -119,6 +217,7 @@ class SampleSettingTab extends PluginSettingTab {
 		const {containerEl} = this;
 
 		containerEl.empty();
+		containerEl.createEl('h2', {text: 'Settings for my awesome plugin.'});
 
 		new Setting(containerEl)
 			.setName('Setting #1')
