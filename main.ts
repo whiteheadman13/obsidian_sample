@@ -28,17 +28,19 @@ export default class MyPlugin extends Plugin {
 	}
 
 	async onload() {
-		// load the settings
-		await this.loadSettings();
-		
+		//設定をロード
+        await this.loadSettings();
+
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new MyPluginSettingTab(this.app, this));
 
 		// This creates an icon in the left ribbon.
 		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
 			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
+			new SampleModal(this.app).testMethod(this.settings);
+			//new Notice('This is a notice!');
 		});
+
 		/**
 		// Perform additional things with the ribbon
 		ribbonIconEl.addClass('my-plugin-ribbon-class');
@@ -100,6 +102,35 @@ class SampleModal extends Modal {
 
 	}
 
+	async testMethod(settings: MyPluginSettings) {
+        
+		if (!settings || !settings.paths) {
+			console.error('settingsまたはpathsが未定義です。');
+			return;
+		}
+
+		// ユーザーが設定したパスを利用した処理
+        settings.paths.forEach(async (path) => {
+            // 例: パスが有効か確認し、何らかの処理を行う
+            const pathIsValid = await this.isValidPathInVault(this.app, path);
+            if (pathIsValid) {
+                // パスが有効な場合の処理
+                console.log(`Processing path: ${path}`);
+                // ここに具体的な処理を追加
+            } else {
+                // パスが無効な場合の処理
+                console.error(`Invalid path: ${path}`);
+            }
+        });
+	}
+
+	// パスがVault内に存在するかどうかを非同期でチェック
+	async isValidPathInVault(app: App, path: string): Promise<boolean> {
+		// Vaultのルートからの相対パスで存在チェック
+		const exists = await app.vault.adapter.exists(path);
+		// 存在しない場合はtrue、存在する場合はfalseを返す
+		return exists;
+	}
 
 
 	async setFileLink() {
@@ -382,7 +413,7 @@ export class MyPluginSettingTab  extends PluginSettingTab {
 				const pathIsValid = await this.isValidPathInVault(this.app, value);
 
 
-				if (!pathIsValid) {
+				if (pathIsValid) {
 					// 有効な場合、エラーメッセージをクリアして設定を更新
 					errorMessageEl.textContent = ""; 
 					this.plugin.settings.paths[index] = value;
@@ -412,12 +443,12 @@ export class MyPluginSettingTab  extends PluginSettingTab {
 		return !paths.some((path, index) => path === newPath && index !== currentIndex);
 	}
 
-	// パスがVault内に存在しないかどうかを非同期でチェック
+	// パスがVault内に存在するかどうかを非同期でチェック
 	async isValidPathInVault(app: App, path: string): Promise<boolean> {
     // Vaultのルートからの相対パスで存在チェック
     const exists = await app.vault.adapter.exists(path);
-    // 存在しない場合はtrue、存在する場合はfalseを返す
-    return !exists;
+    // 存在する場合はtrue、存在する場合はfalseを返す
+    return exists;
 }
 
 
