@@ -235,28 +235,35 @@ class SampleModal extends Modal {
 
 
 	async extractAliases(fileContent: string): Promise<string[]> {
-		
-		console.log("extractAliasesが呼び出されました  " +  performance.now())  ;
-		// YAMLブロック内のエイリアスを検出するための正規表現パターンをさらに更新
+		console.log("extractAliasesが呼び出されました  " +  performance.now());
+		// YAMLブロック内のエイリアスを検出するための正規表現パターン
 		const yamlPattern = /^aliases:(.*?$(?:\n  - .*)*|.*?(\[.*?\])?.*?)/ms;
 		const match = fileContent.match(yamlPattern);
 	
 		if (match) {
 			// インデントされたリスト形式
 			if (match[1] && match[1].includes('\n  - ')) {
-				const listStyleAliases = match[1].split('\n').filter(line => line.startsWith('  - ')).map(line => line.replace('  - ', '').trim().replace(/^["']|["']$/g, ''));
+				const listStyleAliases = match[1]
+					.split('\n')
+					.filter(line => line.startsWith('  - '))
+					.map(line => line.replace('  - ', '').trim().replace(/^["']|["']$/g, ''))
+					.filter(alias => alias.length > 0); // 0文字のエイリアスを除外
 				console.log(listStyleAliases);
 				return listStyleAliases;
 			} else {
 				// カンマ区切り形式 (括弧がある場合もない場合も対応)
 				const inlineAliases = match[1].trim();
 				const aliases = inlineAliases.startsWith('[') ? inlineAliases.slice(1, -1) : inlineAliases; // 括弧を除去
-				return aliases.split(',').map(alias => alias.trim().replace(/^["']|["']$/g, ''));
+				return aliases
+					.split(',')
+					.map(alias => alias.trim().replace(/^["']|["']$/g, ''))
+					.filter(alias => alias.length > 0); // 0文字のエイリアスを除外
 			}
 		}
 		
 		return [];
 	}
+	
 
 	replaceContentWithLinksExcludingYAML(content: string, fileAliases: FileAlias) {
 		// YAML領域を特定する正規表現パターン
