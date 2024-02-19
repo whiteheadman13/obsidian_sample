@@ -1,12 +1,8 @@
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
-
-// Remember to rename these classes and interfaces!
+//import { SampleSettingTab } from "./settings";
 
 interface MyPluginSettings {
-	mySetting: string;
-	hogehoge1: string;
-	hogehoge2: number;
-	hogehoge3: boolean;
+	paths: string[];
 }
 
 interface FileAlias {
@@ -14,52 +10,48 @@ interface FileAlias {
     aliases: string[];
 }
 
+//Create a settings definition
 const DEFAULT_SETTINGS: MyPluginSettings = {
-	mySetting: 'default',
-	hogehoge1: 'string setting',
-	hogehoge2: 10,
-	hogehoge3: false
+	paths: [],
 }
 
 export default class MyPlugin extends Plugin {
 	settings: MyPluginSettings;
 
+	//Save and load the settings object
+	async loadSettings() {
+		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+	}
+
+	async saveSettings() {
+		await this.saveData(this.settings);
+	}
+
 	async onload() {
+		// load the settings
 		await this.loadSettings();
+		
+		// This adds a settings tab so the user can configure various aspects of the plugin
+		this.addSettingTab(new MyPluginSettingTab(this.app, this));
 
 		// This creates an icon in the left ribbon.
 		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
 			// Called when the user clicks the icon.
 			new Notice('This is a notice!');
 		});
+		/**
 		// Perform additional things with the ribbon
 		ribbonIconEl.addClass('my-plugin-ribbon-class');
 
 		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
 		const statusBarItemEl = this.addStatusBarItem();
 		statusBarItemEl.setText('追加テスト');
+ 		*/
 
-		// This adds a simple command that can be triggered anywhere
-		this.addCommand({
-			id: 'onOpen1',
-			name: 'onOpen1',
-			callback: () => {
-				new SampleModal(this.app).onOpen1();
-			}
-		});
-		// This adds an editor command that can perform some operation on the current editor instance
-		this.addCommand({
-			id: 'sample-editor-command',
-			name: 'Sample editor command',
-			editorCallback: (editor: Editor, view: MarkdownView) => {
-				console.log(editor.getSelection());
-				editor.replaceSelection('Sample Editor Command');
-			}
-		});
 		// This adds a complex command that can check whether the current state of the app allows execution of the command
 		this.addCommand({
-			id: 'open-sample-modal-complex',
-			name: 'openを呼び出します',
+			id: 'setFileLink',
+			name: 'setFileLink',
 			checkCallback: (checking: boolean) => {
 				// Conditions to check
 				const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
@@ -67,8 +59,8 @@ export default class MyPlugin extends Plugin {
 					// If checking is true, we're simply "checking" if the command can be run.
 					// If checking is false, then we want to actually perform the operation.
 					if (!checking) {
-						console.log('処理開始');
-						new SampleModal(this.app).open();
+						console.log('処理開始 setFileLinkを起動します');
+						new SampleModal(this.app).setFileLink();
 					}
 
 					// This command will only show up in Command Palette when the check function returns true
@@ -77,8 +69,6 @@ export default class MyPlugin extends Plugin {
 			}
 		});
 
-		// This adds a settings tab so the user can configure various aspects of the plugin
-		this.addSettingTab(new SampleSettingTab(this.app, this));
 
 		// If the plugin hooks up any global DOM events (on parts of the app that doesn't belong to this plugin)
 		// Using this function will automatically remove the event listener when this plugin is disabled.
@@ -93,56 +83,94 @@ export default class MyPlugin extends Plugin {
 	onunload() {
 
 	}
-
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-	}
-
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
+	
+	
 }
 
+interface FileAlias {
+	filename: string;
+	aliases: string[];
+  }
+
 class SampleModal extends Modal {
+	fileAlias: FileAlias;
 	constructor(app: App) {
 		super(app);
+		this.fileAlias = this.fileAlias;
+
 	}
 
+
+
+	async setFileLink() {
+		//開始log出力
+		console.log("setFileLinkを呼び出しました。");
+
+		try{
+			//開いているペインのパスを取得する。
+			const filePath = this.getActiveFilePath();
 	
-	async onOpen() {
-		const {contentEl} = this;
+			//開いているペインのTFileを取得する
+			const file = this.getFileByPath(filePath);
 
-		contentEl.setText('Woah!こんにちは！onOpenを呼び出しました');
-
-		
-		//特定のフォルダ配下のファイル一覧を取得
-
-		//各ファイルのファイル名とaliasを取得する。辞書型として格納する
-		//例えば'ABCD'ファイルにaliasで'a','AA'とある場合、下記２種類の配列を作成する。
-		//key:'ABCD', value:'a'
-		//key:'ABCD', value:'AA'
-		
-		
-		//例えば'ABCD'ファイルにaliasで'a','AA'、'BCD'ファイルにalias'b','BB'とあった場合、
-		//ファイル名の長い順番'ABCD'>'BCD'の順で並び替えを行う。
-
-		//文章内を検索し、一致したらリンクに置き換える。（'ABCD'＞'[[ABCD]]'）
-		//もし、aliasと同じ場合は、[[ABCD|a]]といった形に置き換える。
-
-		await this.loadFilesAndAliases();
-
+			//開いているペインのファイルをバックアップする
+			await this.createFileCopy(file);
 			
-		
+			//開いているペインの内容を取得する
+			const fileContent =  await app.vault.read(file);
+	
+			//aliasの一覧を取得
+			const fileAliases = await this.loadFilesAndAliases();
+			
+			//ファイルの内容を置き換え、リンクを設定する
+			const updatedContent = this.replaceContentWithLinksExcludingYAML(fileContent, fileAliases);
 
+			//開いているペインの内容をアップデートする
+			await app.vault.modify(file, updatedContent);
+
+			const {contentEl} = this;
+			contentEl.setText('処理が完了しました');
+	
+	
+		}catch (error) {
+			console.error("エラーが発生しました", error);
+		}
 
 	}
 
+	//ファイルエイリアスを取得する
+	async loadFilesAndAliases(): Promise<FileAlias[]> 
+	{
+		console.log('loadFilesAndAliasesが呼び出されました');
+		const targetFolderPath: string = 'requirements';
+		let fileReadPromises: Promise<FileAlias>[] = [];
+	  
+		// 特定のフォルダ配下のファイル一覧を取得
+		this.app.vault.getFiles().forEach((file: TFile) => {
+		  if (file.path.startsWith(targetFolderPath)) {
+			// 各ファイルの内容を読み込むPromiseを配列に追加
+			const promise = this.app.vault.read(file).then((content: string): FileAlias => {
+			  const aliases = this.extractAliases(content); // 仮にエイリアスを抽出する関数が存在すると仮定
+			  return { filename: file.basename, aliases };
+			});
+			fileReadPromises.push(promise);
+		  }
+		});
+	  
+		// Promise.allを使用してすべてのPromiseが解決するのを待ち、結果の配列を返す
+		return Promise.all(fileReadPromises).then((fileAliases) => {
+		  // ファイル名が長い順にソート
+		  return fileAliases.sort((a, b) => b.filename.length - a.filename.length);
+		});
+	}
+	
+	
 	onClose() {
 		const {contentEl} = this;
 		contentEl.empty();
 	}
 
-	async onOpen1(){
+	async mdFileCopy(){
 		//この関数を呼び出して、アクティブなペインに開かれているファイルのパスを取得
 		const filePath = await this.getActiveFilePath();
 		console.log("ファイルパスは、" + filePath);
@@ -160,43 +188,6 @@ class SampleModal extends Modal {
 
 	}
 
-	async loadFilesAndAliases() {
-		console.log('loadFilesAndAliasesが呼び出されました');
-		const targetFolderPath: string = 'requirements';
-		let fileReadPromises: Promise<FileAlias>[] = [];
-	
-		// 特定のフォルダ配下のファイル一覧を取得
-		this.app.vault.getFiles().forEach((file: TFile) => {
-			if (file.path.startsWith(targetFolderPath)) {
-				// 各ファイルの内容を読み込むPromiseを配列に追加
-				const promise = this.app.vault.read(file).then((content: string): FileAlias => {
-					const aliases = this.extractAliases(content);
-					return { filename: file.basename, aliases };
-				});
-				fileReadPromises.push(promise);
-			}
-		});
-	
-		// 全てのファイルの読み込みを待つ
-		Promise.all(fileReadPromises).then((filesAndAliases) => {
-			console.log('ファイル名が長い順にソートしてコンソールに出力');
-			//ファイル名をマップする
-
-			// ファイル名が長い順にソートしてコンソールに出力
-			filesAndAliases
-				.flatMap(item => {
-					// ファイル名自体もエイリアスリストに追加
-					const aliasesWithFilename = [...item.aliases, item.filename];
-					return aliasesWithFilename.map(alias => ({ filename: item.filename, alias }));
-    			})
-				.sort((a, b) => b.filename.length - a.filename.length)
-				.forEach(({ filename, alias }) => {
-					console.log(`Key: ${filename}, Value: ${alias}`);
-				});
-		}).catch((err) => {
-			console.error('Error processing files:', err);
-		});
-	}
 
 	extractAliases(fileContent: string): string[] {
 		
@@ -221,6 +212,44 @@ class SampleModal extends Modal {
 		return [];
 	}
 
+	replaceContentWithLinksExcludingYAML(content: string, fileAliases: FileAlias) {
+		// YAML領域を特定する正規表現パターン
+		const yamlPattern = /^---[\s\S]+?---\n/;
+		let yamlContent = '';
+		let yamlMatch = content.match(yamlPattern);
+	
+		// YAML領域が存在する場合、一時的に取り除く
+		if (yamlMatch) {
+			yamlContent = yamlMatch[0];
+			content = content.replace(yamlPattern, '');
+		}
+	
+		// 以前説明したリンク置換処理を実行
+		content = this.replaceContentWithLinks(content, fileAliases);
+	
+		// コンテンツの最上部にYAML領域を戻す
+		content = yamlContent + content;
+		return content;
+	}
+
+	replaceContentWithLinks(content: string, fileAliases: FileAlias) {
+		fileAliases.forEach(({ filename, aliases }) => {
+			// filenameに対する置換
+			if (!content.match(new RegExp(`\\[\\[${filename}\\]\\]`))) { // 既に[[filename]]で囲われていない場合
+				const regexFilename = new RegExp(`(?<!\\[\\[)${filename}(?!\\]\\])`, 'g');
+				content = content.replace(regexFilename, `[[${filename}]]`);
+			}
+	
+			// aliasesに対する置換
+			aliases.forEach(alias => {
+				if (!content.match(new RegExp(`\\[\\[.*\\|${alias}\\]\\]`))) { // 既に[[filename|alias]]で囲われていない場合
+					const regexAlias = new RegExp(`(?<!\\[\\[.*\\|)${alias}(?!\\]\\])`, 'g');
+					content = content.replace(regexAlias, `[[${filename}|${alias}]]`);
+				}
+			});
+		});
+		return content;
+	}
 	
 	// アクティブなペインに開かれているファイルのファイルパスを取得する関数
 	getActiveFilePath() {
@@ -292,32 +321,104 @@ class SampleModal extends Modal {
 
 }
 
-	
 
-
-class SampleSettingTab extends PluginSettingTab {
+export class MyPluginSettingTab  extends PluginSettingTab {
 	plugin: MyPlugin;
+	settings: MyPluginSettings;
 
 	constructor(app: App, plugin: MyPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
 
+	async onload() {
+        await this.loadSettings();
+        this.addSettingTab(new MyPluginSettingTab(this.app, this));
+    }
+	
+	addSettingTab(arg0: MyPluginSettingTab) {
+		throw new Error('Method not implemented.');
+	}
+
+	async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
 	display(): void {
 		const {containerEl} = this;
-
 		containerEl.empty();
-		containerEl.createEl('h2', {text: 'Settings for my awesome plugin.'});
+		containerEl.createEl('h2', {text: 'パス設定'});
 
-		new Setting(containerEl)
-			.setName('Setting #1')
-			.setDesc('It\'s a secret')
-			.addText(text => text
-				.setPlaceholder('Enter your secret')
-				.setValue(this.plugin.settings.mySetting)
-				.onChange(async (value) => {
-					this.plugin.settings.mySetting = value;
-					await this.plugin.saveSettings();
-				}));
+		this.plugin.settings.paths.forEach((path, index) => {
+            this.createPathSetting(containerEl, path, index);
+        });
+
+        new Setting(containerEl)
+            .addButton(btn => btn
+                .setButtonText('追加')
+                .onClick(() => {
+                    this.plugin.settings.paths.push('');
+                    this.plugin.saveSettings().then(() => this.display());
+                }));
 	}
+
+	createPathSetting(containerEl: HTMLElement, path: string, index: number) {
+        const setting = new Setting(containerEl)
+        .addText(text => text
+            .setValue(path)
+            .onChange(async (value) => {
+                const errorMessageElId = `path-error-${index}`;
+                let errorMessageEl = document.getElementById(errorMessageElId);
+
+                // エラーメッセージ要素がまだなければ作成
+                if (!errorMessageEl) {	
+                    errorMessageEl = document.createElement('div');
+                    errorMessageEl.id = errorMessageElId;
+                    errorMessageEl.style.color = 'red';
+                    text.inputEl.parentElement.appendChild(errorMessageEl);
+                }
+
+				// Vault内にパスが存在しないことを確認
+				const pathIsValid = await this.isValidPathInVault(this.app, value);
+
+
+				if (!pathIsValid) {
+					// 有効な場合、エラーメッセージをクリアして設定を更新
+					errorMessageEl.textContent = ""; 
+					this.plugin.settings.paths[index] = value;
+					await this.plugin.saveSettings();
+				} else {
+					errorMessageEl.textContent = "このパスはVault内に存在しません。";
+				}
+				}));
+
+        setting.addButton(btn => btn
+            .setButtonText('削除')
+            .onClick(async () => {
+                this.plugin.settings.paths.splice(index, 1);
+                await this.plugin.saveSettings();
+                this.display(); // 設定画面を再描画
+            }));
+    }
+
+	// パスが有効かどうかを検証する簡単な例（実際の要件に合わせて調整）
+	isValidPath(path: string): boolean {
+		// ここでは単純に空でないことをチェック（実際にはより複雑な検証が必要かもしれません）
+		return path.trim() !== '';
+	}
+
+	// パスが一意かどうかをチェック
+	isUniquePath(paths: string[], newPath: string, currentIndex: number): boolean {
+		return !paths.some((path, index) => path === newPath && index !== currentIndex);
+	}
+
+	// パスがVault内に存在しないかどうかを非同期でチェック
+	async isValidPathInVault(app: App, path: string): Promise<boolean> {
+    // Vaultのルートからの相対パスで存在チェック
+    const exists = await app.vault.adapter.exists(path);
+    // 存在しない場合はtrue、存在する場合はfalseを返す
+    return !exists;
+}
+
+
 }
