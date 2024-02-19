@@ -62,7 +62,7 @@ export default class MyPlugin extends Plugin {
 					// If checking is false, then we want to actually perform the operation.
 					if (!checking) {
 						console.log('処理開始 setFileLinkを起動します');
-						new SampleModal(this.app).setFileLink();
+						new SampleModal(this.app).setFileLink(this.settings);
 					}
 
 					// This command will only show up in Command Palette when the check function returns true
@@ -101,7 +101,7 @@ class SampleModal extends Modal {
 		this.fileAlias = this.fileAlias;
 
 	}
-
+	/** テストメソッド
 	async testMethod(settings: MyPluginSettings) {
         
 		if (!settings || !settings.paths) {
@@ -123,7 +123,8 @@ class SampleModal extends Modal {
             }
         });
 	}
-
+	
+	 */
 	// パスがVault内に存在するかどうかを非同期でチェック
 	async isValidPathInVault(app: App, path: string): Promise<boolean> {
 		// Vaultのルートからの相対パスで存在チェック
@@ -133,11 +134,10 @@ class SampleModal extends Modal {
 	}
 
 
-	async setFileLink() {
+	async setFileLink(settings: MyPluginSettings) {
 		//開始log出力
 		console.log("setFileLinkを呼び出しました。");
 
-		try{
 			//開いているペインのパスを取得する。
 			const filePath = this.getActiveFilePath();
 	
@@ -151,10 +151,12 @@ class SampleModal extends Modal {
 			const fileContent =  await app.vault.read(file);
 	
 			//aliasの一覧を取得
-			const fileAliases = await this.loadFilesAndAliases();
-			
+			const fileAliases = await this.loadFilesAndAliases(settings);
+			console.log('fileAliases' + fileAliases);
+
 			//ファイルの内容を置き換え、リンクを設定する
 			const updatedContent = this.replaceContentWithLinksExcludingYAML(fileContent, fileAliases);
+			console.log('置き換えました');
 
 			//開いているペインの内容をアップデートする
 			await app.vault.modify(file, updatedContent);
@@ -163,36 +165,73 @@ class SampleModal extends Modal {
 			contentEl.setText('処理が完了しました');
 	
 	
-		}catch (error) {
-			console.error("エラーが発生しました", error);
-		}
 
 	}
 
 	//ファイルエイリアスを取得する
-	async loadFilesAndAliases(): Promise<FileAlias[]> 
+	async loadFilesAndAliases(settings: MyPluginSettings): Promise<FileAlias[]> 
 	{
 		console.log('loadFilesAndAliasesが呼び出されました');
-		const targetFolderPath: string = 'requirements';
+		
+		if (!settings || !settings.paths) {
+			console.error('settingsまたはpathsが未定義です。設定画面から設定をお願いします');
+			return;
+		}
+
 		let fileReadPromises: Promise<FileAlias>[] = [];
-	  
-		// 特定のフォルダ配下のファイル一覧を取得
-		this.app.vault.getFiles().forEach((file: TFile) => {
-		  if (file.path.startsWith(targetFolderPath)) {
-			// 各ファイルの内容を読み込むPromiseを配列に追加
-			const promise = this.app.vault.read(file).then((content: string): FileAlias => {
-			  const aliases = this.extractAliases(content); // 仮にエイリアスを抽出する関数が存在すると仮定
-			  return { filename: file.basename, aliases };
-			});
-			fileReadPromises.push(promise);
-		  }
-		});
-	  
+
+		//設定情報を読み込みループを行います。
+		// ユーザーが設定したパスを利用した処理
+        await settings.paths.forEach(async (path) => {
+            // 例: パスが有効か確認し、何らかの処理を行う
+            const pathIsValid = await this.isValidPathInVault(this.app, path);
+            if (pathIsValid) {
+                // パスが有効な場合、処理を継続
+				console.log(path + 'フォルダのエイリアスを取得します');
+
+				const targetFolderPath: string = path;
+			
+				// 特定のフォルダ配下のファイル一覧を取得
+				await this.app.vault.getFiles().forEach((file: TFile) => {
+				if (file.path.startsWith(targetFolderPath)) {
+
+					//ファイルのエイリアスをリストに保存
+					const promise =  this.app.vault.read(file).then(async (content: string): Promise<FileAlias> => {
+						const aliases = await this.extractAliases(content); // 仮にエイリアスを抽出する関数が存在すると仮定
+						
+						return { filename: file.basename, aliases };
+					});
+					fileReadPromises.push(promise);
+				}
+				});
+				
+
+
+				
+            } else {
+                // パスが無効な場合の処理
+                console.error(`Invalid path: ${path}`);
+            }
+        });
+
+		console.log('fileReadPromises:' + fileReadPromises);
 		// Promise.allを使用してすべてのPromiseが解決するのを待ち、結果の配列を返す
 		return Promise.all(fileReadPromises).then((fileAliases) => {
-		  // ファイル名が長い順にソート
-		  return fileAliases.sort((a, b) => b.filename.length - a.filename.length);
+			
+			// ファイル名が長い順にソートしてコンソールに出力
+			fileAliases
+				.flatMap(item => {
+					// ファイル名自体もエイリアスリストに追加
+					const aliasesWithFilename = [...item.aliases, item.filename];
+					return aliasesWithFilename.map(alias => ({ filename: item.filename, alias }));
+    			})
+				.sort((a, b) => b.filename.length - a.filename.length);
+			
+			// ファイル名が長い順にソート
+			return fileAliases.sort((a, b) => b.filename.length - a.filename.length);
+
 		});
+
 	}
 	
 	
@@ -220,7 +259,7 @@ class SampleModal extends Modal {
 	}
 
 
-	extractAliases(fileContent: string): string[] {
+	async extractAliases(fileContent: string): Promise<string[]> {
 		
 		console.log("extractAliasesが呼び出されました");
 		// YAMLブロック内のエイリアスを検出するための正規表現パターンをさらに更新
@@ -231,6 +270,7 @@ class SampleModal extends Modal {
 			// インデントされたリスト形式
 			if (match[1] && match[1].includes('\n  - ')) {
 				const listStyleAliases = match[1].split('\n').filter(line => line.startsWith('  - ')).map(line => line.replace('  - ', '').trim().replace(/^["']|["']$/g, ''));
+				console.log(listStyleAliases);
 				return listStyleAliases;
 			} else {
 				// カンマ区切り形式 (括弧がある場合もない場合も対応)
@@ -239,7 +279,7 @@ class SampleModal extends Modal {
 				return aliases.split(',').map(alias => alias.trim().replace(/^["']|["']$/g, ''));
 			}
 		}
-	
+		
 		return [];
 	}
 
