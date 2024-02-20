@@ -34,24 +34,6 @@ export default class MyPlugin extends Plugin {
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new MyPluginSettingTab(this.app, this));
 
-		// This creates an icon in the left ribbon.
-		/**
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new SampleModal(this.app).testMethod(this.settings);
-			//new Notice('This is a notice!');
-		});
-		*/
-
-		/**
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
-
-		// This adds a status bar item to the bottom of the app. Does not work on mobile apps.
-		const statusBarItemEl = this.addStatusBarItem();
-		statusBarItemEl.setText('追加テスト');
- 		*/
-
 		// This adds a complex command that can check whether the current state of the app allows execution of the command
 		this.addCommand({
 			id: 'setFileLink',
@@ -203,8 +185,13 @@ class SampleModal extends Modal {
 	
 		console.log('fileReadPromisesの準備が完了しました。');
 		return Promise.all(fileReadPromises).then((fileAliases) => {
-			console.log('全てのファイルエイリアスの読み込みが完了しました。');
-			return fileAliases.sort((a, b) => b.filename.length - a.filename.length);
+			// 各ファイルのエイリアスの中で最長のものを基にソートする
+		return fileAliases.sort((a, b) => {
+			// aとbの最長エイリアスを見つける
+			const longestAliasA = a.aliases.reduce((max, curr) => curr.length > max ? curr.length : max, 0);
+			const longestAliasB = b.aliases.reduce((max, curr) => curr.length > max ? curr.length : max, 0);
+			return longestAliasB - longestAliasA; // 降順
+		});
 		});
 	}
 	
@@ -285,24 +272,42 @@ class SampleModal extends Modal {
 		return content;
 	}
 
-	replaceContentWithLinks(content: string, fileAliases: FileAlias) {
-		fileAliases.forEach(({ filename, aliases }) => {
-			// filenameに対する置換
-			if (!content.match(new RegExp(`\\[\\[${filename}\\]\\]`))) { // 既に[[filename]]で囲われていない場合
-				const regexFilename = new RegExp(`(?<!\\[\\[)${filename}(?!\\]\\])`, 'g');
-				content = content.replace(regexFilename, `[[${filename}]]`);
-			}
+	replaceContentWithLinks(content: string, fileAliases: FileAlias[]) {
+		let counter = 0;
+		const tempReplacements = {};
+		const replacementPattern = 'REPLACEMENT_TEMP_KEY_';
 	
-			// aliasesに対する置換
-			aliases.forEach(alias => {
-				if (!content.match(new RegExp(`\\[\\[.*\\|${alias}\\]\\]`))) { // 既に[[filename|alias]]で囲われていない場合
-					const regexAlias = new RegExp(`(?<!\\[\\[.*\\|)${alias}(?!\\]\\])`, 'g');
-					content = content.replace(regexAlias, `[[${filename}|${alias}]]`);
-				}
+		// ファイル名とエイリアスをマージし、長さで降順にソート
+		let replacements = fileAliases.flatMap(({ filename, aliases }) => {
+			return [filename, ...aliases].map(text => ({
+				text: this.escapeRegExp(text),
+				replacement: `[[${filename}|${text}]]`
+			}));
+		}).sort((a, b) => b.text.length - a.text.length);
+	
+		// 一時的なハッシュで置換
+		replacements.forEach(({ text, replacement }) => {
+			const tempKey = `${replacementPattern}${counter++}`;
+			const regex = new RegExp(`(?<!\\[\\[)${text}(?!\\]\\])`, 'g');
+			content = content.replace(regex, () => {
+				tempReplacements[tempKey] = replacement;
+				return tempKey;
 			});
 		});
+	
+		// 一時的なハッシュを本来のリンクに置き換え
+		Object.keys(tempReplacements).forEach(tempKey => {
+			content = content.replace(new RegExp(tempKey, 'g'), tempReplacements[tempKey]);
+		});
+	
 		return content;
 	}
+	
+	// 正規表現の特殊文字をエスケープするヘルパーメソッド
+	escapeRegExp(text: string) {
+		return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); // $&はマッチした全体文字列を意味します
+	}
+	
 	
 	// アクティブなペインに開かれているファイルのファイルパスを取得する関数
 	getActiveFilePath() {

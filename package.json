@@ -10,7 +10,7 @@
 	},
 	"keywords": [],
 	"author": "masa",
-	"isDesktopOnly": true",	
+	"isDesktopOnly": true,	
 	"license": "MIT",
 	"devDependencies": {
 		"@types/node": "^16.11.6",
