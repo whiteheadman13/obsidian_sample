@@ -136,10 +136,12 @@ class SampleModal extends Modal {
 			const fileContent =  await app.vault.read(file);
 
 			//aliasの一覧を取得
-			const fileAliases = await this.loadFilesAndAliases();
-			
+			const fileAliases = await this.loadFilesAndAliases(settings);
+			console.log('fileAliases' + fileAliases + '   ' + (performance.now()));
+
 			//ファイルの内容を置き換え、リンクを設定する
 			const updatedContent = this.replaceContentWithLinksExcludingYAML(fileContent, fileAliases);
+			console.log('置き換えました' + '   ' + (performance.now()));
 
 			//開いているペインの内容をアップデートする
 			await app.vault.modify(file, updatedContent);
@@ -147,38 +149,50 @@ class SampleModal extends Modal {
 			const {contentEl} = this;
 			contentEl.setText('処理が完了しました');
 	
-	
-		}catch (error) {
-			console.error("エラーが発生しました", error);
-		}
+		
 
 	}
 
-	//ファイルエイリアスを取得する
-	async loadFilesAndAliases(): Promise<FileAlias[]> 
-	{
+	async loadFilesAndAliases(settings: MyPluginSettings): Promise<FileAlias[]> {
 		console.log('loadFilesAndAliasesが呼び出されました');
-		const targetFolderPath: string = 'requirements';
+	
+		if (!settings || !settings.paths) {
+			console.error('settingsまたはpathsが未定義です。設定画面から設定をお願いします');
+			return [];
+		}
+	
 		let fileReadPromises: Promise<FileAlias>[] = [];
-	  
-		// 特定のフォルダ配下のファイル一覧を取得
-		this.app.vault.getFiles().forEach((file: TFile) => {
-		  if (file.path.startsWith(targetFolderPath)) {
-			// 各ファイルの内容を読み込むPromiseを配列に追加
-			const promise = this.app.vault.read(file).then((content: string): FileAlias => {
-			  const aliases = this.extractAliases(content); // 仮にエイリアスを抽出する関数が存在すると仮定
-			  return { filename: file.basename, aliases };
-			});
-			fileReadPromises.push(promise);
-		  }
-		});
-	  
-		// Promise.allを使用してすべてのPromiseが解決するのを待ち、結果の配列を返す
+	
+		for (const path of settings.paths) {
+			const pathIsValid = await this.isValidPathInVault(this.app, path);
+			if (pathIsValid) {
+				console.log(path + 'フォルダのエイリアスを取得します');
+				const targetFolderPath: string = path;
+	
+				this.app.vault.getFiles().forEach((file: TFile) => {
+					if (file.path.startsWith(targetFolderPath)) {
+						const promise = this.app.vault.read(file).then(async (content: string): Promise<FileAlias> => {
+							const aliases = await this.extractAliases(content);
+							return { filename: file.basename, aliases };
+						});
+						fileReadPromises.push(promise);
+					}
+				});
+			} else {
+				console.error(`Invalid path: ${path}`);
+			}
+		}
+	
+		console.log('fileReadPromisesの準備が完了しました。');
 		return Promise.all(fileReadPromises).then((fileAliases) => {
-		  // ファイル名が長い順にソート
-		  return fileAliases.sort((a, b) => b.filename.length - a.filename.length);
+			// 各ファイルのエイリアスの中で最長のものを基にソートする
+		return fileAliases.sort((a, b) => {
+			// aとbの最長エイリアスを見つける
+			const longestAliasA = a.aliases.reduce((max, curr) => curr.length > max ? curr.length : max, 0);
+			const longestAliasB = b.aliases.reduce((max, curr) => curr.length > max ? curr.length : max, 0);
+			return longestAliasB - longestAliasA; // 降順
 		});
-
+		});
 	}
 	
 	
@@ -207,17 +221,21 @@ class SampleModal extends Modal {
 	}
 
 
-	extractAliases(fileContent: string): string[] {
-		
-		console.log("extractAliasesが呼び出されました");
-		// YAMLブロック内のエイリアスを検出するための正規表現パターンをさらに更新
+	async extractAliases(fileContent: string): Promise<string[]> {
+		console.log("extractAliasesが呼び出されました  " +  performance.now());
+		// YAMLブロック内のエイリアスを検出するための正規表現パターン
 		const yamlPattern = /^aliases:(.*?$(?:\n  - .*)*|.*?(\[.*?\])?.*?)/ms;
 		const match = fileContent.match(yamlPattern);
 	
 		if (match) {
 			// インデントされたリスト形式
 			if (match[1] && match[1].includes('\n  - ')) {
-				const listStyleAliases = match[1].split('\n').filter(line => line.startsWith('  - ')).map(line => line.replace('  - ', '').trim().replace(/^["']|["']$/g, ''));
+				const listStyleAliases = match[1]
+					.split('\n')
+					.filter(line => line.startsWith('  - '))
+					.map(line => line.replace('  - ', '').trim().replace(/^["']|["']$/g, ''))
+					.filter(alias => alias.length > 0); // 0文字のエイリアスを除外
+				console.log(listStyleAliases);
 				return listStyleAliases;
 			} else {
 				// カンマ区切り形式 (括弧がある場合もない場合も対応)
